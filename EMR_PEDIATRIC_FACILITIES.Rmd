@@ -1,0 +1,71 @@
+---
+title: "Pediatric Facilities"
+output: html_notebook
+---
+
+
+
+```{r,message=FALSE, warning=FALSE,echo=FALSE}
+library(DBI)         
+library(odbc)        
+suppressPackageStartupMessages( library(dplyr) )  
+suppressPackageStartupMessages( library(dbplyr) )  
+```
+
+
+```{r, comment=NA}
+SERVER   <- "servername"
+VERSION  <- 2016    
+DATABASE <- paste0("DBNAME", VERSION)
+CAPTION  <- paste("EMR Data", VERSION)
+```                    
+
+```{r}
+EMR <- dbConnect(odbc(),
+                         Driver="SQL Server",
+                         Server=SERVER,
+                         Database=DATABASE,
+                         UID=Sys.getenv("EMR_UID"),
+                         PWD=Sys.getenv("EMR_PWD"))
+```
+
+
+```{r}
+encounter         <- tbl(EMR, in_schema("dbo", "ENCOUNTER"))
+facility          <- tbl(EMR, in_schema("dbo", "FACILITY"))
+```
+
+
+
+```{r}
+facilityStats <-
+  inner_join(encounter, facility, by="FACILITY_ID")   %>%
+  select(System = SYSTEM_ID,
+         Facility     = FACILITY_ID,
+         AgeYears     = AGE_YEARS,
+         AgeDays      = AGE_DAYS)                    %>%
+  filter(AgeYears >= 0)                                 %>% 
+  
+  group_by(System, Facility)                      %>%  
+  summarize(Encounters    = n(),
+            AgeYearsMean  = mean(AgeYears, na.rm=TRUE),
+            AgeYearsSD    = sd(AgeYears,   na.rm=TRUE),
+            AgeDaysMean   = mean(AgeDays,  na.rm=TRUE),
+            AgeDaysSD     = sd(AgeDays,    na.rm=TRUE)) %>%  
+  ungroup()                                             %>%
+  
+  arrange(AgeYearsMean)                                 %>%
+  collect()
+```
+
+```{r}
+
+pedStats <- facilityStats %>% filter(AgeYearsMean < 20)
+
+```
+
+
+```{r}
+copy_to(EMR, pedStats, "PediatricFacilities")
+```
+
